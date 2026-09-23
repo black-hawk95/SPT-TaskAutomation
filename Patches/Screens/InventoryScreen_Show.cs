@@ -1,5 +1,7 @@
 ﻿using Comfort.Common;
 using EFT;
+using EFT.Quests;
+using EFT.Trading;
 using EFT.UI;
 using HarmonyLib;
 using SPT.Reflection.Patching;
@@ -23,37 +25,34 @@ namespace TaskAutomation.Patches.Screens
         {
             conditionChecker = AccessTools.GetTypesFromAssembly(typeof(AbstractGame).Assembly)
                     .SingleOrDefault(t => t.GetEvent("OnConditionQuestTimeExpired", BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance) != null);
-            conditionChecker = conditionChecker.MakeGenericType(typeof(QuestClass));
+            conditionChecker = conditionChecker.MakeGenericType(typeof(Quest));
 
             itemsProvider = AccessTools.GetTypesFromAssembly(typeof(AbstractGame).Assembly)
                     .SingleOrDefault(t => t.GetMethod("GetItemsForCondition", BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance) != null);
-            itemsProvider = itemsProvider.MakeGenericType(typeof(QuestClass));
+            itemsProvider = itemsProvider.MakeGenericType(typeof(Quest));
             LogHelper.LogInfo($"{itemsProvider}");
             itemsProviderMethod = itemsProvider.GetMethod("GetItemsForCondition", BindingFlags.Public | BindingFlags.Static);
             LogHelper.LogInfo($"{itemsProviderMethod}");
-            dailyTaskType = AccessTools.GetTypesFromAssembly(typeof(RawQuestClass).Assembly).SingleOrDefault(this.isDailyTaskType);
+            dailyTaskType = AccessTools.GetTypesFromAssembly(typeof(QuestTemplate).Assembly).SingleOrDefault(this.isDailyTaskType);
             return AccessTools.FirstMethod(typeof(InventoryScreen), this.IsTargetMethod);
         }
 
         [PatchPostfix]
-        private static void PatchPostfix(InventoryScreen __instance, object questController)
+        private static void PatchPostfix(InventoryScreen __instance, object questController, object session)
         {
             if (RaidTimeUtil.HasRaidLoaded()
-                || questController is not AbstractQuestControllerClass abstractQuestController)
+                || questController is not QuestController abstractQuestController
+                || session is not ITradingSession profileEndpointFactory)
                 return;
             if (Globals.Debug)
-                LogHelper.LogInfo($"Found abstractQuestController.");
-            var sessionField = AccessTools.Field(typeof(InventoryScreen), "iSession");
-            ProfileEndpointFactoryAbstractClass profileEndpointFactory = sessionField.GetValue(__instance) as ProfileEndpointFactoryAbstractClass;
-            if (Globals.Debug)
-                LogHelper.LogInfo($"Found profileEndpointFactory {profileEndpointFactory.GetType()}.");
+                LogHelper.LogInfo($"Found abstractQuestController and trading session.");
             Singleton<UpdateMonoBehaviour>.Instance.SetReflection(conditionChecker, itemsProviderMethod, dailyTaskType, profileEndpointFactory);
             Singleton<UpdateMonoBehaviour>.Instance.SetAbstractQuestController(abstractQuestController);
         }
 
         private bool isDailyTaskType(Type type)
         {
-            Type rawQuestType = typeof(RawQuestClass);
+            Type rawQuestType = typeof(QuestTemplate);
             return type != rawQuestType
                 && type.BaseType == rawQuestType
                 && type.GetProperty("ExpirationTime") != null;
